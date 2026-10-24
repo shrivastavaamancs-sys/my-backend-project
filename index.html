@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastAPI PostgreSQL App</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 300px; margin: 10px; }
+        h2 { text-align: center; color: #333; }
+        input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background-color: #007BFF; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        .result { margin-top: 10px; font-size: 14px; word-break: break-all; color: green; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Register</h2>
+        <input type="email" id="reg-email" placeholder="Enter Email">
+        <input type="password" id="reg-password" placeholder="Enter Password">
+        <button onclick="registerUser()">Register</button>
+        <div id="reg-result" class="result"></div>
+    </div>
+
+    <div class="card">
+        <h2>Login</h2>
+        <input type="email" id="log-email" placeholder="Enter Email">
+        <input type="password" id="log-password" placeholder="Enter Password">
+        <button onclick="loginUser()">Login</button>
+        <div id="log-result" class="result"></div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+
+        async function registerUser() {
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+            
+            const response = await fetch(`${API_URL}/users/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                document.getElementById('reg-result').innerText = "Registration successful!";
+            } else {
+                document.getElementById('reg-result').style.color = "red";
+                document.getElementById('reg-result').innerText = JSON.stringify(data.detail);
+            }
+        }
+
+        async function loginUser() {
+            const email = document.getElementById('log-email').value;
+            const password = document.getElementById('log-password').value;
+
+            const formData = new URLSearchParams();
+            formData.append('username', email);
+            formData.append('password', password);
+
+            const response = await fetch(`${API_URL}/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData
+            });
+            const data = await response.json();
+            if (response.ok) {
+                document.getElementById('log-result').style.color = "green";
+                document.getElementById('log-result').innerText = "Login Token: " + data.access_token;
+                localStorage.setItem("token", data.access_token);
+            } else {
+                document.getElementById('log-result').style.color = "red";
+                document.getElementById('log-result').innerText = "Login failed!";
+            }
+        }
+    </script>
+</body>
+</html>
