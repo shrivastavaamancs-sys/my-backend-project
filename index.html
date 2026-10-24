@@ -18,16 +18,16 @@
 
     <div class="card">
         <h2>Register</h2>
-        <input type="email" id="reg-email" placeholder="Enter Email">
-        <input type="password" id="reg-password" placeholder="Enter Password">
+        <input type="email" id="reg-email" placeholder="Enter Email" required>
+        <input type="password" id="reg-password" placeholder="Enter Password" required>
         <button onclick="registerUser()">Register</button>
         <div id="reg-result" class="result"></div>
     </div>
 
     <div class="card">
         <h2>Login</h2>
-        <input type="email" id="log-email" placeholder="Enter Email">
-        <input type="password" id="log-password" placeholder="Enter Password">
+        <input type="email" id="log-email" placeholder="Enter Email" required>
+        <input type="password" id="log-password" placeholder="Enter Password" required>
         <button onclick="loginUser()">Login</button>
         <div id="log-result" class="result"></div>
     </div>
@@ -46,14 +46,14 @@
             });
             const data = await response.json();
             if (response.ok) {
+                document.getElementById('reg-result').style.color = "green";
                 document.getElementById('reg-result').innerText = "Registration successful!";
             } else {
                 document.getElementById('reg-result').style.color = "red";
                 document.getElementById('reg-result').innerText = JSON.stringify(data.detail);
             }
         }
-
-        async function loginUser() {
+async function loginUser() {
             const email = document.getElementById('log-email').value;
             const password = document.getElementById('log-password').value;
 
@@ -66,16 +66,30 @@
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: formData
             });
+            
             const data = await response.json();
+            
             if (response.ok) {
-                document.getElementById('log-result').style.color = "green";
-                document.getElementById('log-result').innerText = "Login Token: " + data.access_token;
-                localStorage.setItem("token", data.access_token);
+                const token = data.access_token;
+                localStorage.setItem("token", token);
+
+                // Check karein ki user admin hai ya normal user
+                const adminCheck = await fetch(`${API_URL}/admin/dashboard`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (adminCheck.ok) {
+                    // Yahan seedha dashboard.html par redirect kar diya jayega!
+                    window.location.href = "dashboard.html";
+                } else {
+                    document.getElementById('log-result').style.color = "green";
+                    document.getElementById('log-result').innerText = "Login Successful as Normal User!";
+                }
             } else {
                 document.getElementById('log-result').style.color = "red";
-                document.getElementById('log-result').innerText = "Login failed!";
+                document.getElementById('log-result').innerText = "Login failed! Please check email and password.";
             }
         }
-    </script>
+            </script>
 </body>
 </html>

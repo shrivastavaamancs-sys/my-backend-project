@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; text-align: center; padding-top: 50px; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: inline-block; }
+        h1 { color: #28a745; }
+        button { padding: 10px 20px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to Admin Dashboard! 🚀</h1>
+        <p id="welcome-msg">Loading admin data...</p>
+        <button onclick="logout()">Logout</button>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        const token = localStorage.getItem("token");
+        
+        if (!token) {
+            window.location.href = "index.html"; // Agar token nahi hai toh login page par bhej do
+        }
+
+        async function fetchAdminData() {
+            try {
+                const response = await fetch(`${API_URL}/admin/dashboard`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    document.getElementById('welcome-msg').innerText = data.message;
+                } else {
+                    document.getElementById('welcome-msg').innerText = "Access Denied: Admin only!";
+                }
+            } catch (error) {
+                document.getElementById('welcome-msg').innerText = "Failed to connect to server.";
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem("token");
+            window.location.href = "index.html";
+        }
+
+        fetchAdminData();
+    </script>
+</body>
+</html>
