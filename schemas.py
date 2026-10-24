@@ -1,33 +1,49 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr ,ConfigDict
 
-
-# --- User Schemas ---
+# User creation aur response schemas...
 class UserCreate(BaseModel):
-    # EmailStr ensure karega ki sirf proper email format (jaise user@gmail.com) hi aaye
     email: EmailStr
-    
-    # Field(..., min_length=...) ensure karega ki password khali ya null na ho
-    password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
-
+    password: str
+    role: str = "user"
 
 class UserResponse(BaseModel):
     id: int
-    email: str
+    email: EmailStr
+    role: str
 
-    class Config:
-        from_attributes = True
+    # Purana:
+    # class Config:
+    #     from_attributes = True
 
+    # Naya:
+    model_config = ConfigDict(from_attributes=True)
 
-# --- Item Schemas ---
-class ItemCreate(BaseModel):
-    name: str = Field(..., min_length=1)
+    
+# Token schemas (Refresh token ke sath updated)
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class TokenData(BaseModel):
+    email: str | None = None
+    role: str | None = None
+
+# Item schemas
+class ItemBase(BaseModel):
+    name: str
     price: float
-    is_offer: bool = False
+    is_offer: int = 0
 
+class ItemCreate(ItemBase):
+    pass
 
-class ItemResponse(ItemCreate):
+class ItemResponse(ItemBase):
     id: int
-    owner_id: int  # Yeh bhi dikhega ki item kis user ka hai
+    owner_id: int
 
     class Config:
         from_attributes = True

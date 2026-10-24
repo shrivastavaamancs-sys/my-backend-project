@@ -8,8 +8,9 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)  # Khali nahi chhoot sakta
-    hashed_password = Column(String, nullable=False)                 # Required hai
+    hashed_password = Column(String, nullable=False)                    # Required hai
     role = Column(String, default="user", nullable=False)
+    refresh_token = Column(String, nullable=True)                     # <- Yeh naya field add kiya gaya hai
 
     items = relationship("Item", back_populates="owner", cascade="all, delete")
 

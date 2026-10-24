@@ -1,14 +1,12 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 import os
+from dotenv import load_dotenv
 
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi import Depends, HTTPException, status
-
-from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status, Request, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -24,16 +22,12 @@ import schemas
 
 # --- 1. CONFIGURATIONS & INITIALIZATIONS ---
 
-# .env file ki values load karne ke liye
 load_dotenv()
 
-# Limiter initialize karna (client ke IP address ke basis par)
 limiter = Limiter(key_func=get_remote_address)
 
-# FastAPI app initialize karna (Sirf ek baar)
-app = FastAPI(title="Production Ready FastAPI App", version="1.0.0")
+app = FastAPI(title="Production Ready FastAPI App with Refresh Token", version="1.1.0")
 
-# App par limiter state aur exception handler set karna
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -41,9 +35,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 SECRET_KEY = os.getenv("SECRET_KEY", "fallback_secret_key_if_env_is_missing")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # --- 2. CORS MIDDLEWARE ---
 origins = ["*"]
@@ -54,7 +49,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # --- 3. CUSTOM EXCEPTION HANDLER ---
 @app.exception_handler(HTTPException)
@@ -68,23 +62,29 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         },
     )
 
-
 # --- 4. HELPER FUNCTIONS & AUTHENTICATION ---
 
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
-
-def create_access_token(data: dict):
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    if expires_delta:
+        # Purana: expire = datetime.utcnow() + expires_delta
+         expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+def create_refresh_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def get_current_user(
     token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
@@ -108,6 +108,32 @@ def get_current_user(
     return user
 
 
+from fastapi import Security
+
+# 1. Yeh function wahan rakhein jahan aapki security dependencies hain (get_current_user ke niche)
+def require_roles(allowed_roles: list[str]):
+    def role_verifier(current_user: models.User = Depends(get_current_user)):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action"
+            )
+        return current_user
+    return role_verifier
+
+
+# 2. Yeh naye protected routes aap apni file ke baaki routes ke sath kahin bhi jodh sakte hain:
+
+# Sirf Admin ke liye
+@app.get("/admin/analytics", dependencies=[Depends(require_roles(["admin"]))])
+def get_admin_analytics():
+    return {"message": "Welcome Admin! Here is the analytics data."}
+
+# Admin aur Manager dono ke liye
+@app.get("/management/reports", dependencies=[Depends(require_roles(["admin", "manager"]))])
+def get_management_reports():
+    return {"message": "Welcome Admin or Manager! Here are the business reports."}
+
 def get_current_admin_user(current_user: UserModel = Depends(get_current_user)):
     if getattr(current_user, "role", "user") != "admin":
         raise HTTPException(
@@ -116,32 +142,39 @@ def get_current_admin_user(current_user: UserModel = Depends(get_current_user)):
         )
     return current_user
 
-
-# Database tables create karna
+# Create database tables
 models.Base.metadata.create_all(bind=engine)
-
 
 # --- 5. ROUTES ---
 
-# A. Root Route (Serves index.html as requested)
 @app.get("/")
 def read_index():
     return FileResponse("index.html")
 
-# Dashboard HTML file serve karne ke liye route
 @app.get("/dashboard.html")
 def read_dashboard():
     return FileResponse("dashboard.html")
 
-# B. API Health / Status Check Route
 @app.get("/api/health")
 def health_check():
-    return {"message": "Production-ready FastAPI backend with Auth is running!"}
+    return {"message": "Production-ready FastAPI backend with Auth & Refresh Token is running!"}
 
+# A. Logged-in user ki details fetch karne ke liye endpoint
+@app.get("/users/me", response_model=schemas.UserResponse)
+def read_users_me(current_user: models.User = Depends(get_current_user)):
+    return current_user
+
+# B. Profile page serve karne ke liye route
+@app.get("/profile.html")
+def read_profile():
+    return FileResponse("profile.html")
+
+@app.get("/profile.html")
+def read_profile():
+    return FileResponse("profile.html")
 
 # --- 6. USER AUTHENTICATION & REGISTRATION APIS ---
 
-# Register API
 @app.post("/users/", response_model=schemas.UserResponse)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(UserModel).filter(UserModel.email == user.email).first()
@@ -156,11 +189,11 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
-
-# Login API (Rate limited: 5 requests per minute)
-@app.post("/login")
+# Login & Token Endpoint (Returns Access & Refresh Tokens)
+@app.post("/token", response_model=schemas.Token)
+@app.post("/login", response_model=schemas.Token)
 @limiter.limit("5/minute")
-def login(
+def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
@@ -173,19 +206,63 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Generate Access and Refresh Tokens
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email, "role": getattr(user, "role", "user")}, 
+        expires_delta=access_token_expires
+    )
+    refresh_token = create_refresh_token(data={"sub": user.email})
 
+    # Save refresh token in DB
+    user.refresh_token = refresh_token
+    db.commit()
 
-# Get All Users
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+# Refresh Token Endpoint
+@app.post("/refresh", response_model=schemas.Token)
+def refresh_access_token(request_body: schemas.RefreshTokenRequest, db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate refresh token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(request_body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    user = db.query(UserModel).filter(UserModel.email == email).first()
+    if not user or getattr(user, "refresh_token", None) != request_body.refresh_token:
+        raise credentials_exception
+
+    # Generate new Access Token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email, "role": getattr(user, "role", "user")}, 
+        expires_delta=access_token_expires
+    )
+
+    return {
+        "access_token": access_token,
+        "refresh_token": request_body.refresh_token,
+        "token_type": "bearer"
+    }
+
 @app.get("/users/", response_model=list[schemas.UserResponse])
 def get_users(db: Session = Depends(get_db)):
     return db.query(UserModel).all()
 
-
 # --- 7. ITEM APIS (CRUD & User Linked) ---
 
-# Create Item (Protected Route)
 @app.post("/items/", response_model=schemas.ItemResponse)
 def create_item(
     item: schemas.ItemCreate,
@@ -203,14 +280,10 @@ def create_item(
     db.refresh(db_item)
     return db_item
 
-
-# Get All Items
 @app.get("/items/", response_model=list[schemas.ItemResponse])
 def get_items(db: Session = Depends(get_db)):
     return db.query(ItemModel).all()
 
-
-# Get Single Item by ID
 @app.get("/items/{item_id}", response_model=schemas.ItemResponse)
 def get_single_item(item_id: int, db: Session = Depends(get_db)):
     item = db.query(ItemModel).filter(ItemModel.id == item_id).first()
@@ -218,8 +291,6 @@ def get_single_item(item_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Item not found")
     return item
 
-
-# Update Item
 @app.put("/items/{item_id}")
 def update_item(
     item_id: int, updated_item: schemas.ItemCreate, db: Session = Depends(get_db)
@@ -236,8 +307,6 @@ def update_item(
     db.refresh(item)
     return {"message": "Item updated successfully!", "item": item}
 
-
-# Delete Item
 @app.delete("/items/{item_id}")
 def delete_item(item_id: int, db: Session = Depends(get_db)):
     item = db.query(ItemModel).filter(ItemModel.id == item_id).first()
@@ -248,33 +317,10 @@ def delete_item(item_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"Item with ID {item_id} deleted successfully!"}
 
-
-# --- 8. ADMIN ROUTES ---
 # --- 8. ADMIN ROUTES ---
 
-# Admin Dashboard (Protected & Role Restricted)
 @app.get("/admin/dashboard")
 def admin_dashboard(admin_user: UserModel = Depends(get_current_admin_user)):
     return {
         "message": f"Welcome to Admin Dashboard, {admin_user.email}!"
     }
-
-# Yahan /token aur /login dono laga dein taaki 404 Not Found error na aaye
-@app.post("/token")
-@app.post("/login")
-@limiter.limit("5/minute")
-def login_for_access_token(
-    request: Request,
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
-    user = db.query(UserModel).filter(UserModel.email == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    access_token = create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
